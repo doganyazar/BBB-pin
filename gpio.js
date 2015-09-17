@@ -17,25 +17,50 @@ var modes = {
   out: 'out',
   high: 'hi',
   low: 'low'
-};
+}
 
-function Watch(pin) {
-  this.pin = pin;
-  var pinFile = getPinPath(pin);
-  console.log(pinFile);
-  fs.watchFile(pinFile, function (curr, prev) {
-    console.log('the current is: ' + curr);
-    console.log('the previous was: ' + prev);
+util.inherits(Watch, events.EventEmitter);
+function Watch(pins) {
+  var self = this;
+  function listen(pin, value) {
+      self.emit('change', pin, value);
+  }
+  this.watch = pins.forEach(function(pin) {
+    self.watchPin(pin, listen);
   });
 
   events.EventEmitter.call(this);
 }
-util.inherits(Watch, events.EventEmitter);
+
+Watch.prototype.watchPin = function watchPin(pin, cb) {
+  this.pin = pin;
+  var self = this;
+
+  gpio.get(pin, function(err, value) {
+    if (err) throw err;
+    self.value = value;
+
+    fs.watch(util.format('/sys/class/gpio/gpio%d/direction', pin.id), function (event, filename) {
+      gpio.get(pin, function(err, value) {
+        if (err) throw err;
+
+        if (value !== self.value) {
+          self.value = value;
+          return cb(pin, value);
+        }
+      })
+    });
+  });
+}
 
 function Gpio() {
   this.modes = modes;
   this.pins = pins;
 };
+
+Gpio.prototype.watch = function watch(pins) {
+  return new Watch(pins);
+}
 
 Gpio.prototype.set = function set(pin, value, cb) {
   var command = util.format('config-pin %s %s', pin.name, value);
@@ -66,5 +91,9 @@ module.exports = new Gpio();
 if (module === require.main) {
   console.log('BOOOYA');
   var gpio = module.exports;
-  gpio.watch(pins.P8_14);
+  var watch = gpio.watch([pins.P8_10, pins.P8_12]);
+
+  watch.on('change', function () {
+    console.log('change', arguments)
+  });
 }
