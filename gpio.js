@@ -21,6 +21,8 @@ var modes = {
 
 util.inherits(Watch, events.EventEmitter);
 function Watch(pins) {
+  this.pins = pins;
+  this.watchers = [];
   var self = this;
   function listen(pin, value) {
       self.emit('change', pin, value);
@@ -32,15 +34,20 @@ function Watch(pins) {
   events.EventEmitter.call(this);
 }
 
+Watch.prototype.close = function close() {
+  this.watchers.forEach(function(watcher) {
+    watcher.close();
+  });
+}
+
 Watch.prototype.watchPin = function watchPin(pin, cb) {
-  this.pin = pin;
   var self = this;
 
   gpio.get(pin, function(err, value) {
     if (err) throw err;
     self.value = value;
 
-    fs.watch(util.format('/sys/class/gpio/gpio%d/direction', pin.id), function (event, filename) {
+    var fswatch = fs.watch(util.format('/sys/class/gpio/gpio%d/direction', pin.id), function (event, filename) {
       gpio.get(pin, function(err, value) {
         if (err) throw err;
 
@@ -50,6 +57,7 @@ Watch.prototype.watchPin = function watchPin(pin, cb) {
         }
       })
     });
+    self.watchers.push(fswatch);
   });
 }
 
@@ -59,7 +67,7 @@ function Gpio() {
 };
 
 Gpio.prototype.watch = function watch(pins) {
-  return new Watch(pins);
+  return new Watch(this, pins);
 }
 
 Gpio.prototype.set = function set(pin, value, cb) {
@@ -84,8 +92,9 @@ Gpio.prototype.watch = function watch(pin) {
   return new Watch(pin);
 }
 
+var gpio = new Gpio();
 
-module.exports = new Gpio();
+module.exports = gpio;
 
 
 if (module === require.main) {
@@ -96,4 +105,8 @@ if (module === require.main) {
   watch.on('change', function () {
     console.log('change', arguments)
   });
+
+  setTimeout(function() {
+    watch.close();
+  }, 10000);
 }
